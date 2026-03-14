@@ -24,7 +24,6 @@ const SM = {
 export default function App() {
   const [screen,  setScreen]  = useState("login");
   const [session, setSession] = useState(null);
-  const [pending, setPending] = useState(null); // { userId }
   const [demands, setDemands] = useState([]);
   const [users,   setUsers]   = useState([]);
   const [nav,     setNav]     = useState({ view:"list", demandId:null });
@@ -66,16 +65,6 @@ export default function App() {
   setLoading(false);
 };
 
-  const handleVerify = async (code) => {
-    setLoading(true); setError("");
-    try {
-      const res = await api.authVerify(pending.userId, code);
-      api.setToken(res.token);
-      setSession(res.user);
-      setScreen("app");
-    } catch(e) { setError(e.message); }
-    setLoading(false);
-  };
 
   const logout = () => {
     api.clearToken();
@@ -138,7 +127,6 @@ export default function App() {
 
   /* ── Screens ── */
   if (screen==="login") return <LoginScreen onLogin={handleLogin} loading={loading} error={error}/>;
-  if (screen==="2fa")   return <TwoFAScreen onVerify={handleVerify} loading={loading} error={error} onBack={()=>{ setScreen("login"); setError(""); }}/>;
 
   const isAdmin  = session.role==="admin";
   const isGest   = session.role==="gestionnaire";
@@ -255,24 +243,6 @@ function LoginScreen({onLogin,loading,error}) {
 /* ══════════════════════════════════════════════════
    2FA
 ══════════════════════════════════════════════════ */
-function TwoFAScreen({onVerify,loading,error,onBack}) {
-  const [code,setCode]=useState("");
-  return (
-    <div style={{fontFamily:"Inter,sans-serif",minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",width:"min(420px,100%)",boxShadow:"0 4px 24px #0002",textAlign:"center"}}>
-        <div style={{fontSize:40,marginBottom:14}}>🔐</div>
-        <h2 style={{margin:"0 0 8px",fontSize:20,fontWeight:800}}>Vérification 2FA</h2>
-        <p style={{color:"#64748b",fontSize:14,margin:"0 0 20px"}}>Un code vient d'être envoyé à votre email.</p>
-        <FL label="Code à 6 chiffres" value={code} set={setCode} ph="000000"/>
-        {error && <Err>{error}</Err>}
-        <Btn full onClick={()=>onVerify(code)} disabled={code.length!==6||loading} style={{marginTop:14}}>
-          {loading ? "Vérification…" : "Valider"}
-        </Btn>
-        <button onClick={onBack} style={{marginTop:10,background:"none",border:"none",color:"#64748b",fontSize:13,cursor:"pointer"}}>← Retour</button>
-      </div>
-    </div>
-  );
-}
 
 /* ══════════════════════════════════════════════════
    DASHBOARD
