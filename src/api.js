@@ -24,7 +24,8 @@ async function req(method, path, body) {
 // ════════════════════════════════════════════
 // AUTH
 // ════════════════════════════════════════════
-export const authLogin  = (email, password) => req("POST", "/auth/login", { email, password });
+export const authLogin  = (email, password)   => req("POST", "/auth/login",  { email, password });
+export const authVerify = (userId, code)       => req("POST", "/auth/verify", { userId, code });
 export const authMe     = ()                   => req("GET",  "/auth/me");
 
 // ════════════════════════════════════════════
@@ -48,4 +49,6 @@ export const generateMatrice = id             => req("POST", `/demands/${id}/gen
 // ════════════════════════════════════════════
 // NOTES
 // ════════════════════════════════════════════
-export const addNote = (demandId, texte) => req("POST", `/demands/${demandId}/notes`, { texte });
+export const deleteDocument    = id              => req("DELETE", `/documents/${id}`);
+export const forgotPassword    = email            => req("POST",  "/auth/forgot-password", { email });
+export const resetPassword     = (userId, token, password) => req("POST", "/auth/reset-password", { userId, token, password });

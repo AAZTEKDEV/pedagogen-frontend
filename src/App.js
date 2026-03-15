@@ -24,6 +24,7 @@ const SM = {
 export default function App() {
   const [screen,  setScreen]  = useState("login");
   const [session, setSession] = useState(null);
+  const [pending, setPending] = useState(null); // { userId }
   const [demands, setDemands] = useState([]);
   const [users,   setUsers]   = useState([]);
   const [nav,     setNav]     = useState({ view:"list", demandId:null });
@@ -55,16 +56,25 @@ export default function App() {
 
   /* ── AUTH ── */
   const handleLogin = async (email, password) => {
-  setLoading(true); setError("");
-  try {
-    const res = await api.authLogin(email, password);
-    api.setToken(res.token);
-    setSession(res.user);
-    setScreen("app");
-  } catch(e) { setError(e.message); }
-  setLoading(false);
-};
+    setLoading(true); setError("");
+    try {
+      const res = await api.authLogin(email, password);
+      setPending({ userId: res.userId });
+      setScreen("2fa");
+    } catch(e) { setError(e.message); }
+    setLoading(false);
+  };
 
+  const handleVerify = async (code) => {
+    setLoading(true); setError("");
+    try {
+      const res = await api.authVerify(pending.userId, code);
+      api.setToken(res.token);
+      setSession(res.user);
+      setScreen("app");
+    } catch(e) { setError(e.message); }
+    setLoading(false);
+  };
 
   const logout = () => {
     api.clearToken();
@@ -117,7 +127,30 @@ export default function App() {
     } catch(e) { throw e; }
   };
 
-  const handleAddDemand = async (entry) => {
+  const handleDeleteDoc = async (docId, demandId) => {
+    if (!window.confirm("Supprimer ce document ?")) return;
+    try {
+      await api.deleteDocument(docId);
+      setDemands(prev => prev.map(d => d.id===demandId
+        ? {...d, docs: d.docs.filter(doc => doc.id!==docId)}
+        : d
+      ));
+    } catch(e) { alert(e.message); }
+  };
+
+  const handleForgotPassword = async (email) => {
+    try {
+      await api.forgotPassword(email);
+      return true;
+    } catch(e) { return false; }
+  };
+
+  const handleResetPassword = async (userId, token, password) => {
+    try {
+      await api.resetPassword(userId, token, password);
+      return true;
+    } catch(e) { return false; }
+  };
     try {
       const demand = await api.createDemand(entry);
       setDemands(prev => [demand, ...prev]);
@@ -126,7 +159,9 @@ export default function App() {
   };
 
   /* ── Screens ── */
-  if (screen==="login") return <LoginScreen onLogin={handleLogin} loading={loading} error={error}/>;
+  if (screen==="login")  return <LoginScreen onLogin={handleLogin} onForgot={handleForgotPassword} loading={loading} error={error}/>;
+  if (screen==="2fa")    return <TwoFAScreen onVerify={handleVerify} loading={loading} error={error} onBack={()=>{ setScreen("login"); setError(""); }}/>;
+  if (screen==="reset")  return <ResetPasswordScreen onReset={handleResetPassword} onBack={()=>setScreen("login")}/>;
 
   const isAdmin  = session.role==="admin";
   const isGest   = session.role==="gestionnaire";
@@ -218,8 +253,48 @@ export default function App() {
 /* ══════════════════════════════════════════════════
    LOGIN
 ══════════════════════════════════════════════════ */
-function LoginScreen({onLogin,loading,error}) {
-  const [email,setEmail]=useState(""); const [pwd,setPwd]=useState("");
+function LoginScreen({onLogin,onForgot,loading,error}) {
+  const [email,setEmail]=useState("");
+  const [pwd,setPwd]=useState("");
+  const [forgotMode,setForgotMode]=useState(false);
+  const [forgotEmail,setForgotEmail]=useState("");
+  const [forgotSent,setForgotSent]=useState(false);
+  const [forgotLoading,setForgotLoading]=useState(false);
+
+  const handleForgot = async () => {
+    setForgotLoading(true);
+    await onForgot(forgotEmail);
+    setForgotSent(true);
+    setForgotLoading(false);
+  };
+
+  if (forgotMode) return (
+    <div style={{fontFamily:"Inter,sans-serif",minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",width:"min(420px,100%)",boxShadow:"0 4px 24px #0002"}}>
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <div style={{fontSize:40,marginBottom:10}}>🔑</div>
+          <h2 style={{margin:"0 0 6px",fontSize:20,fontWeight:800}}>Mot de passe oublié</h2>
+        </div>
+        {forgotSent ? (
+          <div>
+            <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:10,padding:"14px 16px",color:"#166534",fontSize:14,marginBottom:16}}>
+              ✅ Un email de réinitialisation a été envoyé si votre adresse est connue.
+            </div>
+            <Btn full onClick={()=>{setForgotMode(false);setForgotSent(false);}}>← Retour à la connexion</Btn>
+          </div>
+        ) : (
+          <div>
+            <FL label="Votre email" type="email" value={forgotEmail} set={setForgotEmail} ph="votre@email.com"/>
+            <Btn full onClick={handleForgot} disabled={!forgotEmail||forgotLoading} style={{marginTop:16}}>
+              {forgotLoading?"Envoi...":"Envoyer le lien de réinitialisation"}
+            </Btn>
+            <button onClick={()=>setForgotMode(false)} style={{marginTop:12,background:"none",border:"none",color:"#64748b",fontSize:13,cursor:"pointer",width:"100%"}}>← Retour à la connexion</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div style={{fontFamily:"Inter,sans-serif",minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",width:"min(420px,100%)",boxShadow:"0 4px 24px #0002"}}>
@@ -235,6 +310,9 @@ function LoginScreen({onLogin,loading,error}) {
         <Btn full onClick={()=>onLogin(email,pwd)} disabled={!email||!pwd||loading} style={{marginTop:18}}>
           {loading ? "Connexion…" : "Se connecter →"}
         </Btn>
+        <button onClick={()=>setForgotMode(true)} style={{marginTop:12,background:"none",border:"none",color:"#2563eb",fontSize:13,cursor:"pointer",width:"100%",textAlign:"center"}}>
+          Mot de passe oublié ?
+        </button>
       </div>
     </div>
   );
@@ -243,10 +321,75 @@ function LoginScreen({onLogin,loading,error}) {
 /* ══════════════════════════════════════════════════
    2FA
 ══════════════════════════════════════════════════ */
+function TwoFAScreen({onVerify,loading,error,onBack}) {
+  const [code,setCode]=useState("");
+  return (
+    <div style={{fontFamily:"Inter,sans-serif",minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",width:"min(420px,100%)",boxShadow:"0 4px 24px #0002",textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:14}}>🔐</div>
+        <h2 style={{margin:"0 0 8px",fontSize:20,fontWeight:800}}>Vérification 2FA</h2>
+        <p style={{color:"#64748b",fontSize:14,margin:"0 0 20px"}}>Un code vient d'être envoyé à votre email.</p>
+        <FL label="Code à 6 chiffres" value={code} set={setCode} ph="000000"/>
+        {error && <Err>{error}</Err>}
+        <Btn full onClick={()=>onVerify(code)} disabled={code.length!==6||loading} style={{marginTop:14}}>
+          {loading ? "Vérification…" : "Valider"}
+        </Btn>
+        <button onClick={onBack} style={{marginTop:10,background:"none",border:"none",color:"#64748b",fontSize:13,cursor:"pointer"}}>← Retour</button>
+      </div>
+    </div>
+  );
+}
 
 /* ══════════════════════════════════════════════════
-   DASHBOARD
+   RESET PASSWORD SCREEN
 ══════════════════════════════════════════════════ */
+function ResetPasswordScreen({onReset,onBack}) {
+  const params  = new URLSearchParams(window.location.search);
+  const token   = params.get("token");
+  const userId  = params.get("userId");
+  const [pwd,setPwd]     = useState("");
+  const [pwd2,setPwd2]   = useState("");
+  const [done,setDone]   = useState(false);
+  const [loading,setLoading] = useState(false);
+  const [err,setErr]     = useState("");
+
+  const handleSubmit = async () => {
+    if (pwd !== pwd2) { setErr("Les mots de passe ne correspondent pas."); return; }
+    if (pwd.length < 6) { setErr("Le mot de passe doit faire au moins 6 caractères."); return; }
+    setLoading(true);
+    const ok = await onReset(userId, token, pwd);
+    if (ok) setDone(true);
+    else setErr("Lien invalide ou expiré. Recommencez.");
+    setLoading(false);
+  };
+
+  return (
+    <div style={{fontFamily:"Inter,sans-serif",minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"#fff",borderRadius:20,padding:"40px 36px",width:"min(420px,100%)",boxShadow:"0 4px 24px #0002",textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:14}}>🔑</div>
+        <h2 style={{margin:"0 0 20px",fontSize:20,fontWeight:800}}>Nouveau mot de passe</h2>
+        {done ? (
+          <div>
+            <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:10,padding:"14px 16px",color:"#166534",fontSize:14,marginBottom:16}}>
+              ✅ Mot de passe modifié avec succès !
+            </div>
+            <Btn full onClick={onBack}>← Se connecter</Btn>
+          </div>
+        ) : (
+          <div style={{textAlign:"left"}}>
+            <FL label="Nouveau mot de passe" type="password" value={pwd} set={setPwd} ph="••••••••"/>
+            <div style={{height:12}}/>
+            <FL label="Confirmer le mot de passe" type="password" value={pwd2} set={setPwd2} ph="••••••••"/>
+            {err && <Err>{err}</Err>}
+            <Btn full onClick={handleSubmit} disabled={!pwd||!pwd2||loading} style={{marginTop:16}}>
+              {loading?"Enregistrement...":"Enregistrer le mot de passe"}
+            </Btn>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 function Dashboard({demands,isClient,isGest,onOpen,onNew,onRefresh}) {
   const [fc,setFc]=useState(""); const [fs,setFs]=useState("");
   const counts = STATUTS.reduce((a,s)=>({...a,[s]:demands.filter(d=>d.statut===s).length}),{});
@@ -735,18 +878,29 @@ function Notes({notes,onAdd}) {
   );
 }
 
-function DocList({docs}) {
+function DocList({docs,demandId,statut,isClient,onDelete}) {
   const [preview,setPreview]=useState(null);
+  const canDelete = isClient && !["Envoyé au client","Validé"].includes(statut);
   if(!docs||!docs.length) return <div style={{color:"#94a3b8",fontSize:13}}>Aucun document.</div>;
   return (<>
     {preview&&<div style={{position:"fixed",inset:0,background:"#0007",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setPreview(null)}>
       <div style={{background:"#fff",borderRadius:16,width:"min(860px,95vw)",maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 20px",borderBottom:"1px solid #e2e8f0"}}>
           <span style={{fontWeight:700,fontSize:14}}>📄 {preview.name}</span>
-          <div style={{display:"flex",gap:10}}>{preview.dataUrl&&<a href={preview.dataUrl} download={preview.name} style={{padding:"6px 14px",background:"#eff6ff",color:"#2563eb",borderRadius:7,fontWeight:700,fontSize:12,textDecoration:"none"}}>⬇️</a>}<button onClick={()=>setPreview(null)} style={{padding:"6px 12px",background:"#f1f5f9",border:"none",borderRadius:7,cursor:"pointer",fontWeight:700}}>✕</button></div>
+          <div style={{display:"flex",gap:10}}>
+            {preview.dataUrl&&<a href={preview.dataUrl} download={preview.name} style={{padding:"6px 14px",background:"#eff6ff",color:"#2563eb",borderRadius:7,fontWeight:700,fontSize:12,textDecoration:"none"}}>⬇️</a>}
+            <button onClick={()=>setPreview(null)} style={{padding:"6px 12px",background:"#f1f5f9",border:"none",borderRadius:7,cursor:"pointer",fontWeight:700}}>✕</button>
+          </div>
         </div>
-        <div style={{flex:1,overflow:"auto",padding:preview.fileType==="application/pdf"?0:20}}>
-          {preview.fileType==="application/pdf"&&preview.dataUrl?<iframe src={preview.dataUrl} title={preview.name} style={{width:"100%",height:"70vh",border:"none"}}/>:preview.text?<pre style={{margin:0,fontSize:13,color:"#475569",lineHeight:1.7,whiteSpace:"pre-wrap",fontFamily:"monospace"}}>{preview.text}</pre>:<div style={{color:"#94a3b8",textAlign:"center",padding:40}}>Aperçu non disponible.</div>}
+        <div style={{flex:1,overflow:"auto",padding:20}}>
+          {preview.text
+            ?<pre style={{margin:0,fontSize:13,color:"#475569",lineHeight:1.7,whiteSpace:"pre-wrap",fontFamily:"monospace"}}>{preview.text}</pre>
+            :<div style={{color:"#94a3b8",textAlign:"center",padding:40}}>
+              <div style={{fontSize:40,marginBottom:12}}>📄</div>
+              <div style={{fontSize:14,marginBottom:8}}>Aperçu non disponible pour ce format.</div>
+              {preview.dataUrl&&<a href={preview.dataUrl} download={preview.name} style={{padding:"8px 16px",background:"#eff6ff",color:"#2563eb",borderRadius:7,fontWeight:700,fontSize:13,textDecoration:"none",display:"inline-block"}}>⬇️ Télécharger le fichier</a>}
+            </div>
+          }
         </div>
       </div>
     </div>}
@@ -755,9 +909,19 @@ function DocList({docs}) {
       <span style={{fontSize:13,color:"#64748b"}}>document{docs.length>1?"s":""}</span>
     </div>
     {docs.map((d,i)=>(
-      <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:9,padding:"10px 14px",marginBottom:8}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:20}}>{d.fileType==="application/pdf"?"📕":"📄"}</span><div><div style={{fontSize:13,fontWeight:600}}>{d.name}</div><div style={{fontSize:11,color:"#94a3b8"}}>{d.size?(d.size/1024).toFixed(1)+" KB":""}</div></div></div>
-        <div style={{display:"flex",gap:8}}><button onClick={()=>setPreview(d)} style={{padding:"5px 12px",background:"#eff6ff",color:"#2563eb",border:"none",borderRadius:7,fontWeight:700,fontSize:12,cursor:"pointer"}}>👁 Voir</button>{d.dataUrl&&<a href={d.dataUrl} download={d.name} style={{padding:"5px 12px",background:"#f0fdf4",color:"#10b981",borderRadius:7,fontWeight:700,fontSize:12,textDecoration:"none"}}>⬇️</a>}</div>
+      <div key={d.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:9,padding:"10px 14px",marginBottom:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:20}}>{d.fileType==="application/pdf"?"📕":"📄"}</span>
+          <div>
+            <div style={{fontSize:13,fontWeight:600}}>{d.name}</div>
+            <div style={{fontSize:11,color:"#94a3b8"}}>{d.size?(d.size/1024).toFixed(1)+" KB":""}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>setPreview(d)} style={{padding:"5px 12px",background:"#eff6ff",color:"#2563eb",border:"none",borderRadius:7,fontWeight:700,fontSize:12,cursor:"pointer"}}>👁 Voir</button>
+          {d.dataUrl&&<a href={d.dataUrl} download={d.name} style={{padding:"5px 12px",background:"#f0fdf4",color:"#10b981",borderRadius:7,fontWeight:700,fontSize:12,textDecoration:"none"}}>⬇️</a>}
+          {canDelete&&onDelete&&<button onClick={()=>onDelete(d.id,demandId)} style={{padding:"5px 12px",background:"#fef2f2",color:"#ef4444",border:"none",borderRadius:7,fontWeight:700,fontSize:12,cursor:"pointer"}}>🗑️</button>}
+        </div>
       </div>
     ))}
   </>);
